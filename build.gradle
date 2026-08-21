@@ -10,7 +10,14 @@ plugins {
 
 group = 'io.github.sogis'
 
-version '0.0.11'+System.getProperty('release','-SNAPSHOT')
+def baseVersion = '0.0.12'
+def releaseVersion = System.getProperty('releaseVersion')
+
+if (releaseVersion != null && !(releaseVersion ==~ /\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?/)) {
+    throw new GradleException("Invalid release version: ${releaseVersion}")
+}
+
+version = releaseVersion ?: "${baseVersion}-SNAPSHOT"
 
 def myArtifactId = "dmav"
 
@@ -124,7 +131,7 @@ jreleaser {
     release {
         github {
             repoOwner = 'sogis'
-            overwrite = true
+            overwrite = false
             apiEndpoint = 'https://api.github.com'
         }
     }

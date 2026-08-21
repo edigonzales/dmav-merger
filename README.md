@@ -8,10 +8,11 @@ Werkzeugkasten für das Handling mit DMAV-Transferdateien:
 Die Verarbeitung erfolgt ereignisbasiert mit **iox-ili**. Die aktuelle DMAV-Modellbasis ist `DMAVTYM_Alles_V1_1` (DMAV Version 1.1). Legacy-Daten auf Basis `DMAVTYM_Alles_V1_0` werden weiterhin unterstützt.
 
 Snapshot-/Entwicklungsbuilds:
-- GitHub Actions-Artefakte aus dem `main`-Branch: https://github.com/edigonzales/dmav/actions
+- GitHub Actions-Artefakte aus dem `main`-Branch: https://github.com/sogis/dmav/actions
+- Der JVM-Snapshot-JAR wird als Actions-Artefakt mit 14 Tagen Aufbewahrung bereitgestellt.
 
 Release-Versionen:
-- https://github.com/edigonzales/dmav/releases
+- https://github.com/sogis/dmav/releases
 
 ## Anforderungen
 
@@ -94,9 +95,20 @@ Auf GraalVM Community Edition wird automatisch Serial GC verwendet. Falls der ko
 
 ## Release
 
-Es gibt die zwei Branches `main` und `stable`. Entwickelt wird im `main`-Branch. Für einen Release müssen die Änderungen in den `stable`-Branch gemerged werden:
+Releases werden über Versions-Tags auf dem `main`-Branch ausgelöst. Die Basisversion steht in `build.gradle`; normale Builds tragen den Suffix `-SNAPSHOT`. Für einen Release wird die Version zusätzlich aus dem Tag an Gradle übergeben.
+
+Beispiel für Version `0.0.12`:
 
 ```bash
-git checkout stable
-git rebase main
+git switch main
+git pull --ff-only
+# baseVersion in build.gradle auf 0.0.12 setzen
+git commit -am "Prepare release 0.0.12"
+git push origin main
+
+# Nach erfolgreichem Main-Build:
+git tag -a v0.0.12 -m "Release v0.0.12"
+git push origin v0.0.12
 ```
+
+Der Tag startet den Release-Workflow. Dieser baut den JVM-JAR sowie Native Images für Linux (`x86_64`), Windows (`x86_64`) und macOS (`aarch_64`) und publiziert sie als GitHub-Release. Bestehende Releases werden nicht überschrieben.

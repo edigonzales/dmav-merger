@@ -1,11 +1,16 @@
 name: build and release
 
-on: 
+on:
   push:
-    paths-ignore:
-      - '**.md'
-      - dev/**
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
+
+concurrency:
+  group: build-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -15,38 +20,60 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up JDK 21 for Gradle
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: 'gradle'
           
       - name: Build with Gradle (SNAPSHOT)
-        if: ${{ success() && github.ref == 'refs/heads/main'}}
+        if: ${{ github.ref == 'refs/heads/main' }}
         id: buildSnapshotLib
         run: ./gradlew clean build
 
-      - name: Build with Gradle (RELEASE)
-        if: ${{ success() && github.ref == 'refs/heads/stable'}}
-        id: buildReleaseLib
-        run: ./gradlew clean build -Drelease=
-
-      - name: Debug 1
+      - name: Validate release tag
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        shell: bash
         run: |
-          ls -la build/libs
+          release_version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: $GITHUB_REF_NAME"
+            exit 1
+          fi
 
-      - uses: actions/upload-artifact@v4
-        if: always() && (steps.buildSnapshotLib.outcome == 'failure' || steps.buildReleaseLib.outcome == 'failure')
+      - name: Build with Gradle (RELEASE)
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        id: buildReleaseLib
+        shell: bash
+        run: ./gradlew clean build -DreleaseVersion="${GITHUB_REF_NAME#v}"
+
+      - name: List JVM artifacts
+        if: always()
+        run: |
+          ls -la build/libs || true
+
+      - uses: actions/upload-artifact@v6
+        if: failure()
         with:
           name: reports
           path: build/reports/tests/
+          if-no-files-found: ignore
+
+      - name: Upload JVM snapshot artifact
+        if: ${{ github.ref == 'refs/heads/main' && steps.buildSnapshotLib.outcome == 'success' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: jvm-snapshot-${{ github.sha }}
+          path: build/libs/dmav-*-SNAPSHOT-all.jar
+          retention-days: 14
+          if-no-files-found: error
 
       - name: Upload JVM release artifact
-        if: ${{ github.ref == 'refs/heads/stable' && steps.buildReleaseLib.outcome == 'success' }}
-        uses: actions/upload-artifact@v4
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && steps.buildReleaseLib.outcome == 'success' }}
+        uses: actions/upload-artifact@v6
         with:
           name: jvm-release
           path: build/libs/dmav-*-all.jar
@@ -54,6 +81,7 @@ jobs:
 
   native:
     name: native-${{ matrix.target }}
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     strategy:
       fail-fast: false
       matrix:
@@ -77,10 +105,10 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up JDK 21 for Gradle
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -109,7 +137,7 @@ jobs:
           cp "build/native/nativeCompile/${{ matrix.executable }}" "build/native-releases/${{ matrix.asset }}"
 
       - name: Upload native image
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: native-${{ matrix.target }}
           path: build/native-releases/${{ matrix.asset }}
@@ -117,7 +145,7 @@ jobs:
 
       - name: Upload native build reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: native-report-${{ matrix.target }}
           path: build/reports/native/
@@ -125,7 +153,7 @@ jobs:
 
   release:
     name: release
-    if: ${{ github.ref == 'refs/heads/stable' }}
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     needs:
       - build
       - native
@@ -135,34 +163,53 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Set up JDK 21 for Gradle
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: Download native images
-        uses: actions/download-artifact@v4
+      - name: Download Linux native image
+        uses: actions/download-artifact@v7
         with:
-          pattern: native-*
+          name: native-linux-x86_64
           path: build/native-releases
-          merge-multiple: true
+
+      - name: Download Windows native image
+        uses: actions/download-artifact@v7
+        with:
+          name: native-windows-x86_64
+          path: build/native-releases
+
+      - name: Download macOS native image
+        uses: actions/download-artifact@v7
+        with:
+          name: native-osx-aarch_64
+          path: build/native-releases
 
       - name: Download JVM release artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: jvm-release
           path: build/libs
 
-      - name: Show release assets
-        run: ls -la build/native-releases
+      - name: Verify release assets
+        shell: bash
+        run: |
+          release_version="${GITHUB_REF_NAME#v}"
+          test -f "build/libs/dmav-${release_version}-all.jar"
+          test -f build/native-releases/dmav-linux-x86_64
+          test -f build/native-releases/dmav-windows-x86_64.exe
+          test -f build/native-releases/dmav-osx-aarch_64
+          ls -la build/libs build/native-releases
 
       - name: Release library and native images
-        run: ./gradlew -s jreleaserRelease -Drelease=
+        shell: bash
+        run: ./gradlew -s jreleaserRelease -DreleaseVersion="${GITHUB_REF_NAME#v}"
         env:
           JRELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
