@@ -1,10 +1,11 @@
+import java.nio.charset.StandardCharsets
+import java.util.Locale
+
 plugins {
     id 'application'
-    id 'maven-publish'
-    id 'com.github.johnrengelman.shadow' version '8.1.1'
-    id 'signing'
-    id "io.github.gradle-nexus.publish-plugin" version "1.1.0"
-    id 'org.jreleaser' version '1.17.0'
+    id 'org.graalvm.buildtools.native' version '1.1.6'
+    id 'com.gradleup.shadow' version '9.3.1'
+    id 'org.jreleaser' version '1.25.0'
 }
 
 group = 'io.github.sogis'
@@ -12,9 +13,6 @@ group = 'io.github.sogis'
 version '0.0.11'+System.getProperty('release','-SNAPSHOT')
 
 def myArtifactId = "dmav"
-
-sourceCompatibility = 11
-targetCompatibility = 11
 
 compileJava {
     options.compilerArgs.addAll(['--release', '11'])
@@ -33,15 +31,68 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     implementation 'info.picocli:picocli:4.7.6'
-    implementation 'info.picocli:picocli-codegen:4.7.6'
     annotationProcessor 'info.picocli:picocli-codegen:4.7.6'
-    
-    implementation libs.saxon.he
+
+    implementation 'ch.interlis:iox-ili:1.24.4'
+    implementation 'ch.interlis:ili2c-tool:5.6.8'
+    implementation 'ch.interlis:ili2c-core:5.6.8'
 }
 
 java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
     toolchain {
         languageVersion = JavaLanguageVersion.of(11)
+    }
+}
+
+def nativeImageHome = providers.environmentVariable('GRAALVM_HOME')
+        .orElse(providers.environmentVariable('JAVA_HOME'))
+
+def nativeImageExecutable = nativeImageHome.map { String home ->
+    File installationDirectory = new File(home)
+    boolean windows = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')
+    List<File> candidates = windows
+            ? [new File(installationDirectory, 'bin/native-image.cmd'),
+               new File(installationDirectory, 'bin/native-image.exe'),
+               new File(installationDirectory, 'bin/native-image')]
+            : [new File(installationDirectory, 'bin/native-image'),
+               new File(installationDirectory, 'lib/svm/bin/native-image')]
+    File executable = candidates.find { it.isFile() }
+    if (executable == null) {
+        throw new GradleException("No native-image executable found below ${installationDirectory}")
+    }
+    executable
+}
+
+def nativeGcArgument = nativeImageExecutable.map { File executable ->
+    try {
+        List<String> helpCommand = executable.name.toLowerCase(Locale.ROOT).endsWith('.cmd')
+                ? ['cmd.exe', '/c', executable.absolutePath, '--help']
+                : [executable.absolutePath, '--help']
+        Process helpProcess = new ProcessBuilder(helpCommand)
+                .redirectErrorStream(true)
+                .start()
+        String help = new String(helpProcess.inputStream.bytes, StandardCharsets.UTF_8)
+        int exitCode = helpProcess.waitFor()
+        String gc = exitCode == 0 && help.contains("'G1'") ? 'G1' : 'serial'
+        logger.lifecycle("Native Image GC: ${gc}")
+        "--gc=${gc}"
+    } catch (Exception exception) {
+        logger.lifecycle("Native Image GC probe failed; using serial GC: ${exception.message}")
+        '--gc=serial'
+    }
+}
+
+graalvmNative {
+    toolchainDetection = false
+    binaries {
+        named('main') {
+            imageName.set('dmav')
+            mainClass.set(application.mainClass)
+            buildArgs.add(nativeGcArgument)
+            buildArgs.add('-H:+ReportExceptionStackTraces')
+        }
     }
 }
 
@@ -58,70 +109,9 @@ run {
     args = ["merge", "--config=myconfigAAAAA.ini", "--fosnr=449", "--out=/Users/stefan/tmp"]
 }
 
-task sourcesJar(type: Jar, dependsOn: classes) {
-    archiveClassifier = 'sources'
-    from sourceSets.main.allSource
-}
-
-javadoc.failOnError = false
-task javadocJar(type: Jar, dependsOn: javadoc) {
-    archiveClassifier = 'javadoc'
-    from javadoc.destinationDir
-}
-
-publishing {
-    publications {
-        mavenJava(MavenPublication) {
-            from components.java
-            artifact sourcesJar
-            artifact javadocJar
-
-            pom {
-                name = "dmav"
-                url = "https://github.com/sogis/dmav"
-                description = "dmav"
-                scm {
-                    connection = "scm:git:https@github.com/sogis/dmav"
-                    developerConnection = "scm:git:https@github.com/sogis/dmav"
-                    url = "https://github.com/sogis/dmav"
-                }
-                licenses {
-                    license {
-                        name = "MIT"
-                        url = "https://github.com/sogis/dmav/blob/master/LICENSE"
-                    }
-                }
-                developers {
-                    developer {
-                        id = "edigonzales"
-                        name = "Stefan Ziegler"
-                    }
-                }
-            }
-        }
-    }
-}
-
-if (!version.toString().endsWith("SNAPSHOT")) {
-    signing {
-        sign publishing.publications.mavenJava
-    }
-}
-
-nexusPublishing {
-    repositories {
-        sonatype { 
-            nexusUrl.set(uri("https://s01.oss.sonatype.org/service/local/"))
-            snapshotRepositoryUrl.set(uri("https://s01.oss.sonatype.org/content/repositories/snapshots/"))
-            username = findProperty("ossrhUsername") ?: System.getenv("OSSRH_USERNAME")
-            password = findProperty("ossrhPassword") ?: System.getenv("OSSRH_PASSWORD")
-        }
-    }
-}
-
 jreleaser {
     gitRootSearch = true
-    
+
     project {
         name = myArtifactId
         description = 'Werkzeugkasten für das Handling mit DMAV-Transferdateien.'
@@ -149,6 +139,25 @@ jreleaser {
                 groupId = 'io.github.sogis'
                 artifactId = myArtifactId
                 version = '11'
+            }
+        }
+
+        appNative {
+            active = 'RELEASE'
+            distributionType = 'FLAT-BINARY'
+            stereotype = 'CLI'
+
+            artifact {
+                path = 'build/native-releases/dmav-linux-x86_64'
+                platform = 'linux-x86_64'
+            }
+            artifact {
+                path = 'build/native-releases/dmav-windows-x86_64.exe'
+                platform = 'windows-x86_64'
+            }
+            artifact {
+                path = 'build/native-releases/dmav-osx-aarch_64'
+                platform = 'osx-aarch_64'
             }
         }
     }
