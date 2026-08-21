@@ -10,7 +10,7 @@ plugins {
 
 group = 'io.github.sogis'
 
-def baseVersion = '0.0.12'
+def baseVersion = '0.0.13'
 def releaseVersion = System.getProperty('releaseVersion')
 
 if (releaseVersion != null && !(releaseVersion ==~ /\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?/)) {
