@@ -148,24 +148,19 @@ jreleaser {
                 version = '11'
             }
         }
+    }
 
-        appNative {
-            active = 'RELEASE'
-            distributionType = 'FLAT-BINARY'
-            stereotype = 'CLI'
+    files {
+        active = 'RELEASE'
 
-            artifact {
-                path = 'build/native-releases/dmav-linux-x86_64'
-                platform = 'linux-x86_64'
-            }
-            artifact {
-                path = 'build/native-releases/dmav-windows-x86_64.exe'
-                platform = 'windows-x86_64'
-            }
-            artifact {
-                path = 'build/native-releases/dmav-osx-aarch_64'
-                platform = 'osx-aarch_64'
-            }
+        artifact {
+            path = 'build/native-releases/dmav-linux-x86_64.zip'
+        }
+        artifact {
+            path = 'build/native-releases/dmav-windows-x86_64.zip'
+        }
+        artifact {
+            path = 'build/native-releases/dmav-osx-aarch_64.zip'
         }
     }
 }

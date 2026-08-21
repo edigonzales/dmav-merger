@@ -11,6 +11,14 @@ Snapshot-/Entwicklungsbuilds:
 - GitHub Actions-Artefakte aus dem `main`-Branch: https://github.com/sogis/dmav/actions
 - Der JVM-Snapshot-JAR wird als Actions-Artefakt mit 14 Tagen Aufbewahrung bereitgestellt.
 
+Native-Build manuell testen:
+1. In GitHub unter **Actions** den Workflow `build and release` öffnen.
+2. **Run workflow** auswählen und als Branch `main` setzen.
+3. Den Schalter `run_native` auf `true` setzen.
+4. Nach Abschluss die Artefakte `native-linux-x86_64`, `native-windows-x86_64` und `native-osx-aarch_64` herunterladen.
+
+Dieser manuelle Lauf baut die Native-ZIPs, erzeugt aber keinen GitHub-Release. Ein Release wird weiterhin ausschließlich durch einen `vX.Y.Z`-Tag ausgelöst.
+
 Release-Versionen:
 - https://github.com/sogis/dmav/releases
 
@@ -91,7 +99,7 @@ export PATH="$JAVA_HOME/bin:$PATH"
 build/native/nativeCompile/dmav --help
 ```
 
-Auf GraalVM Community Edition wird automatisch Serial GC verwendet. Falls der konkrete GraalVM-Build G1 anbietet, wird G1 automatisch aktiviert. Die erzeugten Release-Binaries heißen `dmav-linux-x86_64`, `dmav-windows-x86_64.exe` und `dmav-osx-aarch_64`.
+Auf GraalVM Community Edition wird automatisch Serial GC verwendet. Falls der konkrete GraalVM-Build G1 anbietet, wird G1 automatisch aktiviert. Die Release-Binaries werden als ZIPs bereitgestellt: `dmav-linux-x86_64.zip`, `dmav-windows-x86_64.zip` und `dmav-osx-aarch_64.zip`. Jedes ZIP enthält genau eine Datei, die unter Linux/macOS `dmav` beziehungsweise unter Windows `dmav.exe` heißt.
 
 ## Release
 
