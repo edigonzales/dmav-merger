@@ -144,9 +144,9 @@ jobs:
           archive_path="build/native-releases/${{ matrix.archive }}"
 
           if command -v zip >/dev/null 2>&1; then
-            (cd build/native/nativeCompile && zip -q -j "../native-releases/${{ matrix.archive }}" "$binary_name")
+            (cd build/native/nativeCompile && zip -q -j "../../native-releases/${{ matrix.archive }}" "$binary_name")
           else
-            jar --create --file="$archive_path" -C build/native/nativeCompile "$binary_name"
+            jar --create --no-manifest --file="$archive_path" -C build/native/nativeCompile "$binary_name"
           fi
 
           test "$(jar --list --file="$archive_path" | tr -d '\r')" = "$binary_name"
